@@ -723,7 +723,7 @@ for (m in antler_traits) {
         #calculate genetic variance explained by SNP (determined by additive component 1 and dominance component d)
         
         a <- (effectAA - effectBB)/2     # Calculate a
-        d <-  a + effectAB               # Calculate d
+        d <-  effectAB - a               # Calculate d
         
         Vq <- 2*p*q*(a + d*(q - p))^2        # Calculate Vq
         VarExplained <- Vq/(Vq + Va)         # Calculate additive genetic variance explained by QTL

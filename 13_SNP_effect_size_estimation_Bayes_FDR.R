@@ -7,6 +7,13 @@ library(viridis)
 GWAS_results<-read.table("GWAS_results.comp_linkage_group.txt", header=T)
 antler_data<-read.table("antler_data_comp.txt", header=T)
 
+#for LD pruned data set, read in pruned SNP list
+SNPs_pruned<-read.table("Deer31.v2.r2_0.2.prune.in", header=F)
+SNPs_pruned<-read.table("Deer31.v2.r2_0.5.prune.in", header=F)
+SNPs_pruned<-read.table("Deer31.v2.r2_0.8.prune.in", header=F)
+
+#subset GWAS results to include only LD pruned SNPs
+GWAS_results_LD_prune<-subset(GWAS_results, SNP %in% SNPs_pruned$V1)
 
 #loop to apply empirical Bayes FDR to GWAS results (effect size & sd) of all 10 antler measures 
 
@@ -23,42 +30,51 @@ ash_results_all<-data.frame()
 ash_results.sig_all<-data.frame()
 
 for (m in antler_measures_list){
-GWAS_results_sub<-subset(GWAS_results, measure==paste0(m)) #subset GWAS results according to antler measures
-
-lambda<-median(GWAS_results_sub$effB, na.rm = T)+1             #calculate a lambda equivalent to account for inflation - 
-GWAS_results_sub$effB<-(GWAS_results_sub$effB)/lambda          #expected median 0, so need to +1 to both expected and observed values 
-GWAS_results_sub$se_effB<-(GWAS_results_sub$se_effB)/lambda    #(so: (observed median +1)/1 = obs median + 1)
-
-betahat<-GWAS_results_sub$effB
-sebetahat<-GWAS_results_sub$se_effB
-
-measure.ash<-ash(betahat, sebetahat, mixcompdist = "uniform", method= "fdr", optmethod="mixEM", 
-                 control = list(maxiter = 10000), outputlevel= 3)
-ash_results<-measure.ash$result
-ash_results<-cbind(GWAS_results_sub[, c("SNP", "measure")], ash_results)
-colnames(ash_results)[c(1,2)]<-c("SNP.name", "measure")
-ash_results$lambda<-lambda
-
-ash_results.sig<-subset(ash_results, lfsr < 0.05)
-ash_results.sig_all<-rbind(ash_results.sig_all, ash_results.sig)
-
-ash_results_all<-rbind(ash_results_all, ash_results)
-
+  GWAS_results_sub<-subset(GWAS_results_LD_prune, measure==paste0(m)) #subset GWAS results according to antler measures; all oe LD pruned data set
+  
+  lambda<-median(GWAS_results_sub$effB, na.rm = T)+1             #calculate a lambda equivalent to account for inflation - 
+  GWAS_results_sub$effB<-(GWAS_results_sub$effB)/lambda          #expected median 0, so need to +1 to both expected and observed values 
+  GWAS_results_sub$se_effB<-(GWAS_results_sub$se_effB)/lambda    #(so: (observed median +1)/1 = obs median + 1)
+  
+  betahat<-GWAS_results_sub$effB
+  sebetahat<-GWAS_results_sub$se_effB
+  
+  measure.ash<-ash(betahat, sebetahat, mixcompdist = "uniform", method= "fdr", optmethod="mixEM", 
+                   control = list(maxiter = 10000), outputlevel= 3)
+  ash_results<-measure.ash$result
+  ash_results<-cbind(GWAS_results_sub[, c("SNP", "measure")], ash_results)
+  colnames(ash_results)[c(1,2)]<-c("SNP.name", "measure")
+  ash_results$lambda<-lambda
+  
+  ash_results.sig<-subset(ash_results, lfsr < 0.05)
+  ash_results.sig_all<-rbind(ash_results.sig_all, ash_results.sig)
+  
+  ash_results_all<-rbind(ash_results_all, ash_results)
+  
 }
 
 
 write.table(ash_results_all, file="SNP_effect_size_estimation_results_all.txt", sep="\t", 
             col.names = T, row.names = F)
-
+write.table(ash_results_all, file="SNP_effect_size_estimation_results_all_r2_0.2.txt", sep="\t", 
+            col.names = T, row.names = F)
+write.table(ash_results_all, file="SNP_effect_size_estimation_results_all_r2_0.5.txt", sep="\t", 
+            col.names = T, row.names = F)
+write.table(ash_results_all, file="SNP_effect_size_estimation_results_all_r2_0.8.txt", sep="\t", 
+            col.names = T, row.names = F)
 
 #count frequency of significant SNPs and join counts to data frame (to see which SNPs influence multiple traits)
-SNP.count<-count(ash_results.sig_all, vars = "SNP.name")
+SNP.count<-ash_results.sig_all %>% count(SNP.name)
 ash_results.sig_all<-join(ash_results.sig_all, SNP.count)
 colnames(ash_results.sig_all)[14]<-"traits_per_SNP"
 
 #are the significant SNPs shared with SNPs significant for PCs or unique to antler measures?
-ash_results.sig_all<-read.table("SNP_effect_size_estimation_results_sig.txt", header=T)
+#ash_results.sig_all<-read.table("SNP_effect_size_estimation_results_sig.txt", header=T)
 PC.ash_results.sig_all<-read.table("PC.SNP_effect_size_estimation_results_sig.txt", header = T)
+PC.ash_results.sig_all<-read.table("PC.SNP_effect_size_estimation_results_sig_r2_0.2.txt", header = T)
+PC.ash_results.sig_all<-read.table("PC.SNP_effect_size_estimation_results_sig_r2_0.5.txt", header = T)
+PC.ash_results.sig_all<-read.table("PC.SNP_effect_size_estimation_results_sig_r2_0.8.txt", header = T)
+
 ash_results.sig_unique<-subset(ash_results.sig_all, !SNP.name %in% PC.ash_results.sig_all$SNP.name)
 length(unique(ash_results.sig_unique$SNP.name))
 length(unique(ash_results.sig_all$SNP.name))
@@ -69,12 +85,21 @@ head(ash_results.sig_all)
 write.table(ash_results.sig_all, file="SNP_effect_size_estimation_results_sig.txt", sep="\t", 
             col.names = T, row.names = F)
 
+write.table(ash_results.sig_all, file="SNP_effect_size_estimation_results_sig_r2_0.2.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(ash_results.sig_all, file="SNP_effect_size_estimation_results_sig_r2_0.5.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(ash_results.sig_all, file="SNP_effect_size_estimation_results_sig_r2_0.8.txt", sep="\t", 
+            col.names = T, row.names = F)
+
 #significant SNPs----------------------------------------------------------------------------------------------------------------------------------------------
 
 
 #make summary table
 
-#are effect sizes of SNPs poitive or negative?
+#are effect sizes of SNPs positive or negative?
 ash_results.sig_all$sign<-ifelse(ash_results.sig_all$PosteriorMean<0, "negative", "positive")
 #how many SNPs are positive or negative (per measure)?
 ash_results_sig_summary<-ddply(ash_results.sig_all, .(measure, sign), nrow)
@@ -82,12 +107,12 @@ sum(ash_results_sig_summary$V1)
 colnames(ash_results_sig_summary)[3]<-"no.SNPs"
 #how many SNPs are signifcantly associated with each antler measure (per sign of effect)?
 ash_results_sig_summary<-join(ash_results_sig_summary, ddply(ash_results_sig_summary, 
-                                                       .(measure), summarise,
-                                                       total=sum(no.SNPs)))
+                                                             .(measure), summarise,
+                                                             total=sum(no.SNPs)))
 #what are the minima and maxima of the effect sizes for each antler trait?
 ash_results_sig_summary<-join(ash_results_sig_summary, ddply(ash_results.sig_all, .(measure), summarise,
-                               max.effect=max(PosteriorMean),
-                               min.effect=min(PosteriorMean)))
+                                                             max.effect=max(PosteriorMean),
+                                                             min.effect=min(PosteriorMean)))
 
 #what are the values for the quantiles (for 50% and 75%) for effect sizes for each antler measure?
 ash_results.sig_quantiles<-data.frame()
@@ -104,12 +129,21 @@ for (i in antler.traits){
 ash_results_sig_summary<-join(ash_results_sig_summary, ash_results.sig_quantiles)
 
 #how many SNPs (per trait) are unique to antler measures and how many are shared with a PC?
-
 ash_results_SNP.status<-ddply(ash_results.sig_all, .(measure, SNP.status), nrow)
 colnames(ash_results_SNP.status)[3]<-"no.SNPs.status"
+
 #Length only has unique SNPs - need to add row with 0 count for shared to data frame
+#also for pruned data @ r2 = 0.8
 Length_shared<-data.frame(measure="Length", SNP.status="shared", no.SNPs.status=0)
 ash_results_SNP.status<-rbind(ash_results_SNP.status, Length_shared)
+ash_results_SNP.status<-arrange(ash_results_SNP.status, measure)
+
+#for pruned data 
+#r2 = 0.2 and for r2 = 0.5
+#Length and Upperbeam only have unique SNPs - need to add row with 0 count for shared to data frame
+df_shared<-data.frame(measure=c("Length", "UpperBeam"), SNP.status="shared", no.SNPs.status=0)
+ash_results_SNP.status<-rbind(ash_results_SNP.status, df_shared)
+
 ash_results_SNP.status<-arrange(ash_results_SNP.status, measure)
 
 ash_results_sig_summary<-cbind(ash_results_sig_summary, ash_results_SNP.status[, -1])
@@ -117,11 +151,12 @@ ash_results_sig_summary<-cbind(ash_results_sig_summary, ash_results_SNP.status[,
 #summary continued below (add no of pleiotropic SNPs)
 
 
-#filter signifcant SNPs for pleiotropic markers (influence more than one trait)
+#filter significant SNPs for pleiotropic markers (influence more than one trait)
 ash_results.sig_sub<-subset(ash_results.sig_all, traits_per_SNP>1)
 length(unique(ash_results.sig_sub$SNP.name))
 no_dups<-subset(ash_results.sig_all, !duplicated(SNP.name))
-#calciulate a 'proportion' for 
+
+#calculate a 'proportion' for 
 ash_results.sig_sub$prop<-1/(ash_results.sig_sub$traits_per_SNP)
 
 #make an 'ordered variable of antler measure so that this order will be used in plot
@@ -137,19 +172,19 @@ p.prop<-ggplot(ash_results.sig_sub, aes(SNP.name, prop))+geom_bar(aes(fill=measu
   theme(axis.text.x = element_text(size = 6, colour = "black", angle = 90, vjust=0.1, hjust=1), 
         axis.text.y = element_blank(), 
         axis.title = element_blank())
-  
+
 
 ggsave("SNP_contribution_to_trait.png", p.prop, scale=1, width=25, height=25, unit="cm")  
 
 #make category to group and order antler traits into types of measure
 ash_results.sig_sub$Trait.cat<-ifelse(ash_results.sig_sub$measure == "Browlength", "length",
-                                  ifelse(ash_results.sig_sub$measure == "CoronetBrowJunc", "length",
-                                    ifelse(ash_results.sig_sub$measure == "CoronetCirc", "circumference", 
                                       ifelse(ash_results.sig_sub$measure == "CoronetBrowJunc", "length",
-                                        ifelse(ash_results.sig_sub$measure == "Form", "form",
-                                          ifelse(ash_results.sig_sub$measure == "Length", "length",
-                                            ifelse(ash_results.sig_sub$measure == "LowerBeam", "circumference",
-                                              ifelse(ash_results.sig_sub$measure == "TrayLength", "length", "circumference"))))))))
+                                             ifelse(ash_results.sig_sub$measure == "CoronetCirc", "circumference", 
+                                                    ifelse(ash_results.sig_sub$measure == "CoronetBrowJunc", "length",
+                                                           ifelse(ash_results.sig_sub$measure == "Form", "form",
+                                                                  ifelse(ash_results.sig_sub$measure == "Length", "length",
+                                                                         ifelse(ash_results.sig_sub$measure == "LowerBeam", "circumference",
+                                                                                ifelse(ash_results.sig_sub$measure == "TrayLength", "length", "circumference"))))))))
 
 
 measure.count<-ddply(ash_results.sig_sub, .(measure), nrow)
@@ -160,6 +195,38 @@ plot(ash_results_sig_summary$total, ash_results_sig_summary$prop.plei.SNPs)
 
 write.table(ash_results_sig_summary, file="ash_sig_SNP_summary.txt", sep="\t", row.names = F,
             col.names = T)
+
+write.table(ash_results_sig_summary, file="ash_sig_SNP_summary_r2_0.2.txt", sep="\t", row.names = F,
+            col.names = T)
+write.table(ash_results_sig_summary, file="ash_sig_SNP_summary_r2_0.5.txt", sep="\t", row.names = F,
+            col.names = T)
+write.table(ash_results_sig_summary, file="ash_sig_SNP_summary_r2_0.8.txt", sep="\t", row.names = F,
+            col.names = T)
+
+#make supplementary table of all summary tables for pruned ashr results
+ash_results_sig_summary.0.2<-read.table("ash_sig_SNP_summary_r2_0.2.txt", header=T)
+ash_results_sig_summary.0.2$r2_cutoff<-0.2
+ash_results_sig_summary.0.5<-read.table("ash_sig_SNP_summary_r2_0.5.txt", header=T)
+ash_results_sig_summary.0.5$r2_cutoff<-0.5
+ash_results_sig_summary.0.8<-read.table("ash_sig_SNP_summary_r2_0.8.txt", header=T)
+ash_results_sig_summary.0.8$r2_cutoff<-0.8
+
+ash_results_sig_summary_pruned_all<-rbind(ash_results_sig_summary.0.2, ash_results_sig_summary.0.5)
+ash_results_sig_summary_pruned_all<-rbind(ash_results_sig_summary_pruned_all, ash_results_sig_summary.0.8)
+
+ash_results_sig_summary_pruned_all<-ash_results_sig_summary_pruned_all[, c("measure", "total", "prop.plei.SNPs",
+                                                                           "min.effect", "max.effect", "lower.quant",
+                                                                           "upper.quant", "r2_cutoff")]
+
+ash_results_sig_summary_pruned_all<-ash_results_sig_summary_pruned_all %>%
+  distinct(measure, total, prop.plei.SNPs, min.effect, max.effect, lower.quant,
+           upper.quant, r2_cutoff)
+
+library(xtable)
+print(xtable(ash_results_sig_summary_pruned_all, type = "latex", 
+             display = c("d", "s", "d", "f", "f", "f", "f", "f", "f")),
+      file = "ash_results_sig_summary_pruned_data.tex")
+
 
 #mean standardise effect size values (max, min, quantiles) in ash results summary data frame
 
@@ -173,8 +240,8 @@ ash_results_sig_summary_mean_std<-ash_results_sig_summary %>%
          upper.quant=upper.quant/Mean, lower.quant=lower.quant/Mean)%>%
   select(-Mean)%>%
   join(., ash_results_sig_summary[, c("measure", "sign", "no.SNPs", "total", "SNP.status", 
-                                     "no.SNPs.status", "pleiotropic.SNPs", "prop.plei.SNPs" )], by="measure")
-  
+                                      "no.SNPs.status", "pleiotropic.SNPs", "prop.plei.SNPs" )], by="measure")
+
 ash_results_sig_summary_mean_std<-ash_results_sig_summary_mean_std[c(1:2, 5:6, 9:10, 13:14, 17:18, 21:22,
                                                                      25:26, 29:30), ]
 
@@ -207,7 +274,7 @@ ash_results.sig_sub$prop.measure<-1/(ash_results.sig_sub$pleiotropic.SNPs)
 head(ash_results.sig_all)
 
 ash_results.sig_lengths<-subset(ash_results.sig_all, !measure== "Form" & 
-                              !measure== "CoronetCirc" & !measure=="LowerBeam")
+                                  !measure== "CoronetCirc" & !measure=="LowerBeam")
 
 head(ash_results.sig_lengths)
 #make an 'ordered variable of antler measure so that this order will be used in plot
@@ -240,7 +307,7 @@ p.eff.circ<-ggplot(ash_results.sig_circ, aes(SNP.name, measure))+geom_tile(aes(f
         axis.text.y = element_text(size=18, colour = "black"), axis.ticks.y = element_line(size = 1),axis.title = element_blank(), 
         legend.title = element_text(size=14), legend.text = element_text(size=12))+
   scale_y_discrete(labels=c("Coronet Circumference", "Lower Beam"))
-  
+
 
 ggsave("Sig_SNPs_post.effect.sizes_circ.png", p.eff.circ, scale=1, width = 25, height = 25, units = "cm")
 
@@ -333,7 +400,7 @@ beta_post.est_all<-data.frame()
 
 for (m in antler_measures_list){
   ash_results_sub<-subset(ash_results_all, measure==paste0(m))
-
+  
   betahat_vec<-as.data.frame(ash_results_sub[, c("betahat")])
   betahat_vec$variable<-"GWAS.est"
   colnames(betahat_vec)[1]<-"effect.size"
@@ -347,7 +414,7 @@ for (m in antler_measures_list){
   
   assign(paste0("beta_post.est_", m), beta_post.est)
   #beta_post.est_all<-rbind(beta_post.est_all, beta_post.est)
-
+  
 }  
 
 
@@ -356,8 +423,8 @@ library(viridis)
 
 # have to make plots outside loop - won't plot or save inside loop  
 p<-ggplot(data=beta_post.est_TrayLength, aes(effect.size))+geom_density(aes(fill=variable))+
-    scale_fill_viridis(discrete=T, option = "C", alpha=0.5)+xlim(-2, 2)+xlab("Effect size")+
-    ylab("Density")+theme(legend.title=element_blank())
+  scale_fill_viridis(discrete=T, option = "C", alpha=0.5)+xlim(-2, 2)+xlab("Effect size")+
+  ylab("Density")+theme(legend.title=element_blank())
 p  
 max(beta_post.est_CoronetBrowJunc$effect.size, na.rm = T)
 
@@ -371,6 +438,14 @@ library(ashr)
 
 PC.GWAS_results<-read.table("PC.GWAS_results.comp.txt", header=T)
 antler_data<-read.table("antler_resid_PCs.txt", header=T)
+
+#for LD pruned data set, read in pruned SNP list
+SNPs_pruned<-read.table("Deer31.v2.r2_0.2.prune.in", header=F)
+SNPs_pruned<-read.table("Deer31.v2.r2_0.5.prune.in", header=F)
+SNPs_pruned<-read.table("Deer31.v2.r2_0.8.prune.in", header=F)
+
+#subset GWAS results to include only LD pruned SNPs
+PC.GWAS_results_LD_prune<-subset(PC.GWAS_results, SNP %in% SNPs_pruned$V1)
 
 
 #loop to apply empirical Bayes FDR to GWAS results (effect size & sd) of all 11 antler PCs
@@ -388,7 +463,7 @@ PC.ash_results_all<-data.frame()
 PC.ash_results.sig_all<-data.frame()
 
 for (m in antler_measures_list){
-  PC.GWAS_results_sub<-subset(PC.GWAS_results, measure==paste0(m)) #subset GWAS results according to antler measures
+  PC.GWAS_results_sub<-subset(PC.GWAS_results_LD_prune, measure==paste0(m)) #subset GWAS results according to antler measures
   
   lambda<-median(PC.GWAS_results_sub$effB, na.rm = T)+1             #calculate a lambda equivalent to account for inflation - 
   PC.GWAS_results_sub$effB<-(PC.GWAS_results_sub$effB)/lambda          #expected median 0, so need to +1 to both expected and observed values 
@@ -415,20 +490,30 @@ for (m in antler_measures_list){
 write.table(PC.ash_results_all, file="PC.SNP_effect_size_estimation_results_all.txt", sep="\t", 
             col.names = T, row.names = F)
 
-write.table(PC.ash_results.sig_all, file="PC.SNP_effect_size_estimation_results_sig.txt", sep="\t", 
+write.table(PC.ash_results_all, file="PC.SNP_effect_size_estimation_results_all_r2_0.2.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(PC.ash_results_all, file="PC.SNP_effect_size_estimation_results_all_r2_0.5.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(PC.ash_results_all, file="PC.SNP_effect_size_estimation_results_all_r2_0.8.txt", sep="\t", 
             col.names = T, row.names = F)
 
 #count frequency of significant SNPs and join counts to data frame (to see which SNPs influence multiple traits)
 SNP.count<-PC.ash_results.sig_all %>%
   group_by(SNP.name)%>%
   summarise(freq=n())
-  
+
 PC.ash_results.sig_all<-join(PC.ash_results.sig_all, SNP.count)
 colnames(PC.ash_results.sig_all)[14]<-"traits_per_SNP"
 
 
 #check how many significant SNPs are shared between antler measures and PCs
 ash_results.sig<-read.table("SNP_effect_size_estimation_results_sig.txt", header=T)
+ash_results.sig<-read.table("SNP_effect_size_estimation_results_sig_r2_0.2.txt", header=T)
+ash_results.sig<-read.table("SNP_effect_size_estimation_results_sig_r2_0.5.txt", header=T)
+ash_results.sig<-read.table("SNP_effect_size_estimation_results_sig_r2_0.8.txt", header=T)
+
 ash_results.sig_shared<-subset(PC.ash_results.sig_all, SNP.name %in% ash_results.sig$SNP.name)
 ash_results.sig_unique<-subset(PC.ash_results.sig_all, !SNP.name %in% ash_results.sig$SNP.name)
 
@@ -442,6 +527,15 @@ head(PC.ash_results.sig_all)
 write.table(PC.ash_results.sig_all, file="PC.SNP_effect_size_estimation_results_sig.txt", sep="\t", 
             col.names = T, row.names = F)
 
+write.table(PC.ash_results.sig_all, file="PC.SNP_effect_size_estimation_results_sig_r2_0.2.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(PC.ash_results.sig_all, file="PC.SNP_effect_size_estimation_results_sig_r2_0.5.txt", sep="\t", 
+            col.names = T, row.names = F)
+
+write.table(PC.ash_results.sig_all, file="PC.SNP_effect_size_estimation_results_sig_r2_0.8.txt", sep="\t", 
+            col.names = T, row.names = F)
+
 #significant SNPs----------------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -453,12 +547,12 @@ PC.ash_results_sig_summary<-ddply(PC.ash_results.sig_all, .(measure, sign), nrow
 sum(PC.ash_results_sig_summary$V1)
 colnames(PC.ash_results_sig_summary)[3]<-"no.SNPs"
 PC.ash_results_sig_summary<-join(PC.ash_results_sig_summary, ddply(PC.ash_results_sig_summary, 
-                                                             .(measure), summarise,
-                                                             total=sum(no.SNPs)))
+                                                                   .(measure), summarise,
+                                                                   total=sum(no.SNPs)))
 
 PC.ash_results_sig_summary<-join(PC.ash_results_sig_summary, ddply(PC.ash_results.sig_all, .(measure), summarise,
-                                                             max.effect=max(PosteriorMean),
-                                                             min.effect=min(PosteriorMean)))
+                                                                   max.effect=max(PosteriorMean),
+                                                                   min.effect=min(PosteriorMean)))
 
 #add 5% and 95% quantiles
 PC.ash_results.sig_quantiles<-data.frame()
@@ -479,7 +573,8 @@ PC.ash_results_sig_summary<-join(PC.ash_results_sig_summary, PC.ash_results.sig_
 PC.ash_results_SNP.status<-ddply(PC.ash_results.sig_all, .(measure, SNP.status), nrow)
 colnames(PC.ash_results_SNP.status)[3]<-"no.SNPs.status"
 
-#PC6, PC7, PC8, PC10, PC11 only have has unique SNPs but positive and negative effect sizes , so need to add 0 count for shared SNPs 
+
+#PC7, PC10, PC11 only have has unique SNPs but positive and negative effect sizes , so need to add 0 count for shared SNPs 
 #before data can be joined to summary table 
 missing_status_df<-data.frame(measure=c("PC7","PC10", "PC11"), SNP.status="shared", no.SNPs.status=0)
 PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df)
@@ -489,10 +584,107 @@ PC.ash_results_SNP.status<-arrange(PC.ash_results_SNP.status, measure)
 PC.ash_results_sig_summary<-cbind(PC.ash_results_sig_summary, PC.ash_results_SNP.status[, -1])
 #PC.ash_results_sig_summary<-PC.ash_results_sig_summary[, -9]
 
+#for pruned data
+#r2 = 0.2
+#PC7, PC11 only have unique SNPs but positive and negative effect sizes, so need to add 0 count for shared SNPs 
+#before data can be joined to summary table 
+missing_status_df<-data.frame(measure=c("PC7","PC11"), SNP.status="shared", no.SNPs.status=0)
+PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df)
+#PC1 only has shared SNPs but positive and negative effects
+missing_status_df2<-data.frame(measure=c("PC1"), SNP.status="unique", no.SNPs.status=0)
+PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df2)
+PC.ash_results_SNP.status<-arrange(PC.ash_results_SNP.status, measure)
+
+#join SNP status data to summary data
+PC.ash_results_sig_summary<-cbind(PC.ash_results_sig_summary, PC.ash_results_SNP.status[, -1])
+
+#PC5 only has negative effect SNPs and only shared loci, need to duplicate row 
+match_row<-grep("PC5", PC.ash_results_sig_summary$measure)
+row_dup<-PC.ash_results_sig_summary[match_row, ]
+row_dup$SNP.status<-"unique"
+row_dup$no.SNPs.status<-0
+PC.ash_results_sig_summary<-rbind(PC.ash_results_sig_summary, row_dup)
+PC.ash_results_sig_summary<-arrange(PC.ash_results_sig_summary, measure)
+
+#r2 = 0.5
+#PC1, PC2, PC3, PC5 PC6, PC7 and PC10 only have unique  SNPs but positive and negative effect sizes, so need to add 0 count for shared SNPs 
+#before data can be joined to summary table 
+missing_status_df<-data.frame(measure=c("PC1", "PC2", "PC3", "PC5", "PC6", "PC7", "PC10"), SNP.status="shared", no.SNPs.status=0)
+PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df)
+#PC11 only has shared SNPs but positive and negative effects
+missing_status_df2<-data.frame(measure=c("PC11"), SNP.status="unique", no.SNPs.status=0)
+PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df2)
+PC.ash_results_SNP.status<-arrange(PC.ash_results_SNP.status, measure)
+
+#join SNP status data to summary data
+PC.ash_results_sig_summary<-cbind(PC.ash_results_sig_summary, PC.ash_results_SNP.status[, -1])
+
+#PC8 only has negative effect SNPs and only unique loci, need to duplicate row 
+match_row<-grep("PC8", PC.ash_results_sig_summary$measure)
+row_dup<-PC.ash_results_sig_summary[match_row, ]
+row_dup$SNP.status<-"shared"
+row_dup$no.SNPs.status<-0
+PC.ash_results_sig_summary<-rbind(PC.ash_results_sig_summary, row_dup)
+PC.ash_results_sig_summary<-arrange(PC.ash_results_sig_summary, measure)
+
+
+#r2 = 0.8 
+#PC7, PC10 and PC11 only have unique  SNPs but positive and negative effect sizes, so need to add 0 count for shared SNPs 
+#before data can be joined to summary table 
+missing_status_df<-data.frame(measure=c("PC7", "PC10", "PC11"), SNP.status="shared", no.SNPs.status=0)
+PC.ash_results_SNP.status<-rbind(PC.ash_results_SNP.status, missing_status_df)
+PC.ash_results_SNP.status<-arrange(PC.ash_results_SNP.status, measure)
+
+#join SNP status data to summary data
+PC.ash_results_sig_summary<-cbind(PC.ash_results_sig_summary, PC.ash_results_SNP.status[, -1])
+
+#PC8 only has negative effect SNPs and only unique loci, need to duplicate row 
+match_row<-grep("PC8", PC.ash_results_sig_summary$measure)
+row_dup<-PC.ash_results_sig_summary[match_row, ]
+row_dup$SNP.status<-"shared"
+row_dup$no.SNPs.status<-0
+PC.ash_results_sig_summary<-rbind(PC.ash_results_sig_summary, row_dup)
+
+#PC6 only has positive effect SNPs and only unique loci, need to duplicate row 
+match_row2<-grep("PC6", PC.ash_results_sig_summary$measure)
+row_dup2<-PC.ash_results_sig_summary[match_row2, ]
+row_dup2$SNP.status<-"shared"
+row_dup2$no.SNPs.status<-0
+PC.ash_results_sig_summary<-rbind(PC.ash_results_sig_summary, row_dup2)
+
+PC.ash_results_sig_summary<-arrange(PC.ash_results_sig_summary, measure)
+
 #filter signifcant SNPs for pleiotropic markers (influence more than one trait)
 PC.ash_results.sig_sub<-subset(PC.ash_results.sig_all, traits_per_SNP>1) #no pleiotropic SNPs
 
 write.table(PC.ash_results_sig_summary, file="PC.ash_sig_SNP_summary.txt", sep="\t", row.names = F, col.names = T)
+write.table(PC.ash_results_sig_summary, file="PC.ash_sig_SNP_summary_r2_0.2.txt", sep="\t", row.names = F, col.names = T)
+write.table(PC.ash_results_sig_summary, file="PC.ash_sig_SNP_summary_r2_0.5.txt", sep="\t", row.names = F, col.names = T)
+write.table(PC.ash_results_sig_summary, file="PC.ash_sig_SNP_summary_r2_0.8.txt", sep="\t", row.names = F, col.names = T)
+
+
+#make supplementary table of all summary tables for pruned ashr results
+PC.ash_results_sig_summary.0.2<-read.table("PC.ash_sig_SNP_summary_r2_0.2.txt", header=T)
+PC.ash_results_sig_summary.0.2$r2_cutoff<-0.2
+PC.ash_results_sig_summary.0.5<-read.table("PC.ash_sig_SNP_summary_r2_0.5.txt", header=T)
+PC.ash_results_sig_summary.0.5$r2_cutoff<-0.5
+PC.ash_results_sig_summary.0.8<-read.table("PC.ash_sig_SNP_summary_r2_0.8.txt", header=T)
+PC.ash_results_sig_summary.0.8$r2_cutoff<-0.8
+
+PC.ash_results_sig_summary_pruned_all<-rbind(PC.ash_results_sig_summary.0.2, PC.ash_results_sig_summary.0.5)
+PC.ash_results_sig_summary_pruned_all<-rbind(PC.ash_results_sig_summary_pruned_all, PC.ash_results_sig_summary.0.8)
+PC.ash_results_sig_summary_pruned_all<-subset(PC.ash_results_sig_summary_pruned_all, !SNP.status=="shared")
+
+PC.ash_results_sig_summary_pruned_all<-PC.ash_results_sig_summary_pruned_all[, c("measure", "total",
+                                                                                 "min.effect", "max.effect", "lower.quant",
+                                                                                 "upper.quant", "no.SNPs.status", "r2_cutoff")]
+
+library(xtable)
+print(xtable(PC.ash_results_sig_summary_pruned_all, type = "latex", 
+             display = c("d", "s", "d", "f", "f", "f", "f", "f", "f")),
+      file = "PC.ash_results_sig_summary_pruned_data.tex")
+
+
 
 #make new measure variable that is ordered in way it should be displayed on y-axis (to force ggplot to stick to that order)
 measure_levels<-c("PC1", "PC2", "PC3", "PC4", "PC5", "PC6", "PC7", "PC8", "PC9", "PC10", "PC11")
